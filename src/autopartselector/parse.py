@@ -33,19 +33,20 @@ def parse_si(tok: str, unit: str | None = None) -> float | None:
     s = _normalise(tok)
     if not s:
         return None
+    if not _RKM.match(s):
+        units = (unit,) if unit else UNITS
+        for u in units:
+            if s.endswith(u) and len(s) > len(u):
+                s = s[: -len(u)]
+                break
+            if s.lower().endswith(u.lower()) and u.lower() in ("ohm", "ohms"):
+                s = s[: -len(u)]
+                break
+        s = s.strip()
     rkm = _RKM.match(s)
     if rkm:
         a, p, b = rkm.groups()
         return float(f"{a}.{b}") * (1.0 if p == "R" else PREFIX[p])
-    units = (unit,) if unit else UNITS
-    for u in units:
-        if s.endswith(u) and len(s) > len(u):
-            s = s[: -len(u)]
-            break
-        if s.lower().endswith(u.lower()) and u.lower() in ("ohm", "ohms"):
-            s = s[: -len(u)]
-            break
-    s = s.strip()
     frac = _FRACTION.match(s)
     if frac:
         return int(frac.group(1)) / int(frac.group(2))

@@ -9,6 +9,7 @@ from autopartselector.parse import classify_token, parse_requirement, parse_si
     ("10k", 10e3), ("4k7", 4.7e3), ("2R2", 2.2), ("0R1", 0.1), ("10R", 10), ("1M", 1e6), ("100mΩ", 0.1),
     ("100n", 100e-9), ("4n7", 4.7e-9), ("0.1uF", 0.1e-6), ("10µF", 10e-6), ("4.7uH", 4.7e-6), ("50", 50),
     ("10kΩ", 10e3), ("1kohm", 1e3), ("470p", 470e-12),
+    ("1k7", 1.7e3), ("1k7Ω", 1.7e3), ("4k75", 4.75e3), ("1M2", 1.2e6), ("0R05", 0.05), ("2u2F", 2.2e-6),
 ])
 def test_parse_si(tok, want):
     assert math.isclose(parse_si(tok), want)
