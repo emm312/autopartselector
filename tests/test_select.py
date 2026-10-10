@@ -79,3 +79,34 @@ def test_inductor_current_uses_lowest_rating():
     assert pick("L", "10uH 2A", ls) is None
     assert pick("L", "10uH 2A", ls, allow_power_inductors=True).part.lcsc == 22
     assert math.isclose(ls[0].value, 10e-6)
+
+
+def test_shielded_inductors():
+    ls = [
+        part(30, "L", "0805", "10uH 1A 1.2A Multilayer inductor ±20%", basic=True),
+        part(31, "L", "1210", "10uH 1.2A 1.5A 100mΩ Unshielded Inductor ±20%"),
+        part(32, "L", "SMD,4x4mm", "10uH 2A 2.5A 50mΩ Magnetic Shielded Inductor ±20%"),
+        part(33, "L", "SMD,5x5mm", "10uH 3A 4A 30mΩ Molded Inductor ±20%"),
+    ]
+    assert [p.shielded for p in ls] == [None, False, True, True]
+    assert pick("L", "10uH", ls).part.lcsc == 30
+    assert pick("L", "10uH shielded", ls, allow_power_inductors=True).part.lcsc == 32
+    assert pick("L", "10uH 2.5A shielded", ls, allow_power_inductors=True).part.lcsc == 33
+    assert pick("L", "10uH unshielded", ls).part.lcsc == 31
+
+
+def test_similar_size_prefers_stock_footprint():
+    ls = [
+        part(40, "L", "SMD,2x1.2mm", "10uH 1A 1A Molded Inductor ±20%", stock=10**6),
+        part(41, "L", "0805", "10uH 1A 1A Molded Inductor ±20%"),
+    ]
+    assert pick("L", "10uH shielded", ls, allow_power_inductors=True).part.lcsc == 41
+
+
+def test_shield_request_from_description():
+    from autopartselector.parse import parse_requirement
+    r = parse_requirement("L", "4.7uH 2A", {"Description": "Shielded power inductor"})
+    assert r.shielded is True and not r.problems and r.current == 2
+    assert parse_requirement("L", "4.7uH", {"Description": "Inductor"}).shielded is None
+    assert parse_requirement("L", "4.7uH non-shielded", {}).shielded is False
+    assert parse_requirement("C", "1u shielded", {}).shielded is None

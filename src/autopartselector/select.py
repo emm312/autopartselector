@@ -7,7 +7,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from .db import Part
-from .footprints import CHIP, diode_package_key, package_area
+from .footprints import CHIP, diode_package_key, footprint_for, package_area
 from .parse import Requirement
 
 DEFAULT_DIELECTRICS = {"C0G", "X5R", "X6S", "X6T", "X7R", "X7S", "X7T", "X8R", "X8L"}
@@ -77,13 +77,16 @@ def meets(req: Requirement, p: Part, opts: Options) -> bool:
     elif req.kind == "L":
         if req.current is not None and (not p.currents or min(p.currents) < req.current):
             return False
+        if req.shielded is not None and p.shielded is not req.shielded:
+            return False
         if req.tolerance is not None and (p.tolerance is None or p.tolerance > req.tolerance + 1e-9):
             return False
     return True
 
 
-def _rank_key(p: Part):
-    return (not p.basic, -p.stock, p.price if p.price is not None else math.inf)
+def _rank_key(p: Part, kind: str):
+    has_fp = footprint_for(kind, p.package) is not None
+    return (not p.basic, not has_fp, -p.stock, p.price if p.price is not None else math.inf)
 
 
 def size_ladder(parts: list[Part], opts: Options) -> list[tuple[float, list[str]]]:
@@ -99,7 +102,15 @@ def size_ladder(parts: list[Part], opts: Options) -> list[tuple[float, list[str]
         a = package_area(p.package)
         if a is not None and start - 1e-9 <= a <= stop + 1e-9:
             by_area[round(a, 3)].add(p.package)
-    return [(a, sorted(by_area[a])) for a in sorted(by_area)]
+    # Packages within 10% of each other in area are one step (e.g. a molded "SMD,2x1.2mm" and an 0805),
+    # so a package with a stock footprint isn't passed over for a marginally smaller one without.
+    steps: list[tuple[float, list[str]]] = []
+    for a in sorted(by_area):
+        if steps and a <= steps[-1][0] * 1.1:
+            steps[-1][1].extend(sorted(by_area[a]))
+        else:
+            steps.append((a, sorted(by_area[a])))
+    return steps
 
 
 def choose(req: Requirement, parts_by_pkg: dict[str, list[Part]], ladder, opts: Options) -> Choice | None:
@@ -118,7 +129,7 @@ def choose(req: Requirement, parts_by_pkg: dict[str, list[Part]], ladder, opts: 
             if any(p.basic for p in ok):
                 pick_from = ok
                 break
-    best = min(pick_from, key=_rank_key)
+    best = min(pick_from, key=lambda p: _rank_key(p, req.kind))
     bumped = opts.size if best.package != opts.size else None
     reason = "basic" if best.basic else "extended"
     return Choice(best, bumped, reason)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import difflib
 import os
 import re
@@ -112,7 +113,8 @@ def cmd_assign(args) -> int:
             print(f"warning: {e}; not using net voltages", file=sys.stderr)
     net_overrides = dict(args.net or [])
     conn = db.open_db(Path(args.db))
-    cache: dict[str, tuple[dict, list]] = {}
+    cache: dict[str, tuple[dict, list, list]] = {}  # kind -> (parts by package, size ladder, parts)
+    power_ladder = None  # inductor ladder incl. non-chip packages, for symbols that ask for shielded
 
     rows = []
     unresolved = 0
@@ -138,8 +140,8 @@ def cmd_assign(args) -> int:
                 continue
             if kind not in cache:
                 parts = db.load_parts(conn, kind, args.min_stock)
-                cache[kind] = (select.index_by_package(parts), select.size_ladder(parts, opts))
-            by_pkg, ladder = cache[kind]
+                cache[kind] = (select.index_by_package(parts), select.size_ladder(parts, opts), parts)
+            by_pkg, ladder, parts = cache[kind]
 
             fields = {k: sym.prop(k) or "" for k in sym.props}
             req = parse_requirement(kind, value, fields)
@@ -151,6 +153,11 @@ def cmd_assign(args) -> int:
                     req.net_voltage = max(est)
                     if req.voltage is not None and req.voltage < req.net_voltage:
                         notes.append(f"nets suggest {req.net_voltage:g}V")
+            if req.shielded is not None and not opts.allow_power_inductors:
+                # Inductors that state shielding are nearly all power inductors in "SMD,AxBmm" packages.
+                if power_ladder is None:
+                    power_ladder = select.size_ladder(parts, dataclasses.replace(opts, allow_power_inductors=True))
+                ladder = power_ladder
             choice = select.choose(req, by_pkg, ladder, opts) if req.value is not None else None
             if choice is None:
                 unresolved += len(sym.refs)

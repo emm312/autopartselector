@@ -84,6 +84,7 @@ class Requirement:
     tolerance: float | None = None
     dielectric: str | None = None
     net_voltage: float | None = None  # estimated from net names; used only when `voltage` is unset
+    shielded: bool | None = None  # inductors: True/False if the symbol asks for (un)shielded
     problems: list[str] = field(default_factory=list)
 
     @property
@@ -104,6 +105,8 @@ class Requirement:
             bits.append(f"{self.tolerance * 100:g}%")
         if self.dielectric:
             bits.append(self.dielectric)
+        if self.shielded is not None:
+            bits.append("shielded" if self.shielded else "unshielded")
         return " ".join(bits) or "-"
 
 
@@ -143,9 +146,25 @@ FIELD_ALIASES = {
 _FIELD_UNITS = {"voltage": "V", "current": "A", "power": "W"}
 
 
+def shield_request(text: str) -> bool | None:
+    """'shielded' -> True, 'unshielded' / 'non-shielded' -> False, else None."""
+    t = text.lower()
+    if re.search(r"\b(un|non-?)shielded\b", t):
+        return False
+    if re.search(r"\bshielded\b", t):
+        return True
+    return None
+
+
 def parse_requirement(kind: str, value_field: str, fields: dict[str, str]) -> Requirement:
     """Merge Value-field tokens and explicit symbol fields (fields win)."""
     req = Requirement(kind)
+    if kind == "L":
+        for text in (fields.get("Description", ""), value_field):
+            s = shield_request(text)
+            if s is not None:
+                req.shielded = s
+        value_field = re.sub(r"\b(?:un|non-?)?shielded\b", "", value_field, flags=re.I)
     toks = value_field.split()
     if toks:
         req.value = parse_si(toks[0])

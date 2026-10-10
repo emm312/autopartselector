@@ -38,6 +38,7 @@ class Part:
     tolerance: float | None = None
     dielectric: str | None = None
     currents: list[float] = field(default_factory=list)
+    shielded: bool | None = None
 
     @property
     def lcsc_str(self) -> str:
@@ -54,6 +55,12 @@ def first_price(price: str) -> float | None:
 
 def parse_description(kind: str, desc: str, part: Part) -> None:
     unit = VALUE_UNIT[kind]
+    if kind == "L":
+        d = desc.lower()
+        if "unshielded" in d:
+            part.shielded = False
+        elif "shielded" in d or "molded" in d:  # molded (metal composite) inductors are shielded by construction
+            part.shielded = True
     for tok in desc.split():
         if "@" in tok or "Hz" in tok or "℃" in tok:
             continue
