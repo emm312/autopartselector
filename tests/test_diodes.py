@@ -6,7 +6,7 @@ import pytest
 from autopartselector import db
 from autopartselector.cli import _diode_mpn
 from autopartselector.db import Part
-from autopartselector.footprints import diode_footprint, diode_package_key, footprint_package_key
+from autopartselector.footprints import diode_footprint, package_key, footprint_package_key
 from autopartselector.kicad_sch import Symbol, diode_kind
 from autopartselector.select import choose_mpn
 
@@ -17,7 +17,7 @@ from autopartselector.select import choose_mpn
     ("SMAF", "SMAF"), ("TO-220F", None),
 ])
 def test_package_key(pkg, key):
-    assert diode_package_key(pkg) == key
+    assert package_key(pkg) == key
 
 
 @pytest.mark.parametrize("fp,key", [

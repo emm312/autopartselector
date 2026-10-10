@@ -7,7 +7,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from .db import Part
-from .footprints import CHIP, diode_package_key, footprint_for, package_area
+from .footprints import CHIP, footprint_for, package_area
+from .footprints import package_key as _package_key
 from .parse import Requirement
 
 DEFAULT_DIELECTRICS = {"C0G", "X5R", "X6S", "X6T", "X7R", "X7S", "X7T", "X8R", "X8L"}
@@ -140,12 +141,26 @@ def choose_mpn(mpn: str, parts: list[Part], package_key: str | None = None,
     """Best part for an MPN: Basic first, then exact MPN over suffixed variants, then stock."""
     ok = [
         p for p in parts
-        if (package_key is None or diode_package_key(p.package) == package_key)
+        if (package_key is None or _package_key(p.package) == package_key)
         and (not manufacturer or manufacturer.lower() in (p.manufacturer or "").lower())
     ]
     if not ok:
         return None
     return min(ok, key=lambda p: (not p.basic, p.mfr.lower() != mpn.lower(), -p.stock))
+
+
+def closest_mpn(parts: list[Part], package_key: str | None = None,
+                manufacturer: str | None = None) -> tuple[Part, int] | None:
+    """Best prefix-match suggestion (Basic, then stock) and how many other MPNs also matched."""
+    ok = [
+        p for p in parts
+        if (package_key is None or _package_key(p.package) == package_key)
+        and (not manufacturer or manufacturer.lower() in (p.manufacturer or "").lower())
+    ]
+    if not ok:
+        return None
+    best = min(ok, key=lambda p: (not p.basic, -p.stock))
+    return best, len({p.mfr.upper() for p in ok}) - 1
 
 
 def index_by_package(parts: list[Part]) -> dict[str, list[Part]]:

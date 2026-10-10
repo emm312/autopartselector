@@ -80,15 +80,53 @@ _DIODE_FOOTPRINTS = {
 _KNOWN_DIODE_KEYS = set(_DIODE_FOOTPRINTS) | set(CHIP) | _DIODE_NO_FOOTPRINT
 
 
+# IC/transistor packages, as "<family>-<pins>" with an optional EP suffix ("SOIC-8-1EP", "ESOP-8", "QFN-32-EP").
+_IC_PKG = re.compile(
+    r"^(E|H)?(SOIC|SOP|SO|SSOP|TSSOP|MSOP|VSSOP|LQFP|TQFP|T?SOT-23|[VWUTX]?QFN|[VWUXP]?DFN|[VWUX]?SON)-(\d+)(W)?(-\d*EP)?$")
+_IC_FAMILY = {"SOP": "SOIC", "SO": "SOIC", "TSOT-23": "SOT-23"}
+_IC_ALIASES = {
+    "SOT-223-3": "SOT-223", "SOT-223-4": "SOT-223", "SOT-89-3": "SOT-89",
+    "SOT-25": "SOT-23-5", "SOT-753": "SOT-23-5", "SOT-26": "SOT-23-6", "SOT-23-6L": "SOT-23-6",
+    "SC-70-5": "SOT-353", "SOT-666-6": "SOT-666", "SC-88A": "SOT-353", "SOT-353-5": "SOT-353", "SC-88": "SOT-363",
+    "TO-252-2": "TO-252", "TO-252-3": "TO-252", "DPAK": "TO-252",
+    "TO-263-2": "TO-263", "TO-263-3": "TO-263", "D2PAK": "TO-263",
+}
+_IC_KEYS = {"SOT-223", "SOT-89", "SOT-353", "SOT-563", "SOT-723", "SOT-143", "SOT-666", "TO-252", "TO-263"}
+
+
+def _normalise(t: str) -> str:
+    """Spelling fixes before alias lookup: 'SOT223' -> 'SOT-223', 'SOT-23-5L' -> 'SOT-23-5',
+    'SOIC-16-300mil' -> 'SOIC-16W' (wide body, as KiCad names it), 'SSOP-20-208mil' -> 'SSOP-20'."""
+    t = re.sub(r"^SOT(?=\d)", "SOT-", t)
+    m = re.match(r"^(.*-\d+)-[\d.]+(MIL|MM)$", t)
+    if m:
+        t = m.group(1) + ("W" if t.endswith("-300MIL") and t.startswith("SO") and not t.startswith("SOT") else "")
+    return re.sub(r"^(.*-\d+)L$", r"\1", t)
+
+
 def _canon(tok: str) -> str | None:
-    t = tok.strip().upper()
+    t = _normalise(tok.strip().upper())
     t = _DIODE_ALIASES.get(t, t)
-    return t if t in _KNOWN_DIODE_KEYS else None
+    t = _IC_ALIASES.get(t, t)
+    if t in _KNOWN_DIODE_KEYS or t in _IC_KEYS:
+        return t
+    m = _IC_PKG.match(t)
+    if not m:
+        return None
+    lead, family, pins, wide, ep = m.groups()
+    family = _IC_FAMILY.get(family, family)
+    if family.endswith("SON"):
+        family = "DFN"
+    if family.endswith("QFN") or family.endswith("DFN"):
+        return f"{family[-3:]}-{pins}"  # these nearly always have a pad; match on pin count only
+    if family == "SOT-23" and pins == "3":
+        return "SOT-23"
+    return f"{family}-{pins}" + (wide or "") + ("-EP" if lead or ep else "")
 
 
-def diode_package_key(package: str) -> str | None:
-    """'SMA(DO-214AC)' -> 'SMA', 'DFN1006-2L' -> 'SOD-882', '0603' -> '0603'; None if unknown."""
-    for tok in re.split(r"[()\s,]+", package):
+def package_key(package: str) -> str | None:
+    """'SMA(DO-214AC)' -> 'SMA', 'SOP-8' -> 'SOIC-8', 'QFN-32-EP(5x5)' -> 'QFN-32'; None if unknown."""
+    for tok in re.split(r"[()\s,_]+", package):
         k = _canon(tok)
         if k:
             return k
@@ -96,7 +134,7 @@ def diode_package_key(package: str) -> str | None:
 
 
 def footprint_package_key(footprint: str) -> str | None:
-    """'Diode_SMD:D_SOD-123F' -> 'SOD-123F', 'LED_SMD:LED_0603_1608Metric' -> '0603'."""
+    """'Diode_SMD:D_SOD-123F' -> 'SOD-123F', 'Package_SO:SOIC-8_3.9x4.9mm_P1.27mm' -> 'SOIC-8'."""
     name = footprint.split(":", 1)[-1]
     name = re.sub(r"^(D|LED)_", "", name)
     for tok in (name.split("_")[0], name):

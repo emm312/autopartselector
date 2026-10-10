@@ -1,4 +1,4 @@
-"""autopartselector: fill Footprint + LCSC for R/C/L and diode symbols in a KiCad schematic."""
+"""autopartselector: fill Footprint + LCSC for R/C/L and diode symbols (and LCSC for other parts) in a KiCad schematic."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 from . import db, kicad_sch, netlist, project, select, update
-from .footprints import CHIP, diode_footprint, diode_package_key, footprint_for, footprint_package_key
+from .footprints import CHIP, diode_footprint, package_key, footprint_for, footprint_package_key
 from .parse import parse_requirement
 
 
@@ -53,30 +53,79 @@ def _diode_mpn(sym) -> str | None:
     return value
 
 
-def assign_diode(sch, sym, kind: str, conn, args, field: str) -> tuple[tuple, str]:
-    """Returns (report row, status) where status is 'ok', 'unresolved' or 'skipped'."""
-    refs, value = ",".join(sym.refs), sym.prop("Value") or ""
+def _other_mpn(sym) -> tuple[str | None, bool]:
+    """(MPN, whether it came from an MPN field) for a non-passive, non-diode symbol."""
+    mpn = _field(sym, MPN_FIELDS)
+    if mpn:
+        return mpn, True
     mpn = _diode_mpn(sym)
-    if mpn is None:
-        if kind == "LED":
-            return (refs, value, "", "-", "", "", "", "", "LED without a part number; skipped"), "skipped"
-        return (refs, value, "", "-", "", "", "", "", "Value isn't a part number; NO MATCH"), "unresolved"
+    # A Value left as a generic symbol name ("Conn_01x04", "Q_NMOS_GSD") isn't a part number, and short values
+    # ("K0", "25M", "12:1") match unrelated listings.
+    if mpn and (mpn == sym.lib_id.split(":", 1)[-1] and "_" in mpn
+                or len(mpn) < 5 or not re.search(r"[A-Za-z]", mpn)):
+        return None, False
+    return mpn, False
+
+
+# Reference prefixes the "other parts" path leaves alone: handled (or deliberately skipped) by the R/C/L and
+# diode paths, or not real parts.
+OTHER_SKIP_REFS = {"R", "C", "L", "D", "LED", "TP", "H", "MH", "FID", "NT", "LOGO"}
+
+
+def other_kind(sym) -> bool:
+    m = re.match(r"[A-Za-z_]+", sym.ref)
+    return bool(m) and m.group(0).upper() not in OTHER_SKIP_REFS
+
+
+def assign_by_mpn(sch, sym, kind: str, conn, args, field: str) -> tuple[tuple, str]:
+    """Pick by part number. kind is 'D', 'LED' or 'other'.
+
+    Returns (report row, status) where status is 'ok', 'unresolved' or 'skipped'. For 'other' parts only LCSC is
+    written, and a part number that came from the Value and isn't found is skipped rather than unresolved.
+    """
+    refs, value = ",".join(sym.refs), sym.prop("Value") or ""
+    if kind == "other":
+        mpn, strict = _other_mpn(sym)
+        if mpn is None:
+            return (refs, value, "", "-", "", "", "", "", "no part number; skipped"), "skipped"
+    else:
+        mpn, strict = _diode_mpn(sym), True
+        if mpn is None:
+            if kind == "LED":
+                return (refs, value, "", "-", "", "", "", "", "LED without a part number; skipped"), "skipped"
+            return (refs, value, "", "-", "", "", "", "", "Value isn't a part number; NO MATCH"), "unresolved"
     notes = []
     footprint = (sym.prop("Footprint") or "").strip()
     pkg_key = footprint_package_key(footprint) if footprint else None
     if footprint and pkg_key is None:
         notes.append(f"unrecognised footprint {footprint.split(':')[-1]}; any package")
     mfr = _field(sym, MFR_FIELDS)
-    parts = db.find_mpn(conn, mpn, args.min_stock)
+    subs = db.DIODE_SUBCATEGORIES if kind != "other" else None
+    parts = db.find_mpn(conn, mpn, args.min_stock, subs)
     p = select.choose_mpn(mpn, parts, pkg_key, mfr)
     if p is None:
+        if not parts:
+            # Values often leave off the orderable suffix ('TLV62569DDC' vs 'TLV62569DDCR'). Suggest, don't write.
+            near = select.closest_mpn(db.find_mpn_prefix(conn, mpn, args.min_stock, subs), pkg_key, mfr)
+            if near:
+                q, others = near
+                notes.append(f"closest {q.mfr} ({q.lcsc_str}, {q.package}, {'Basic' if q.basic else 'Ext'}, "
+                             f"{q.stock} stock{f', +{others} other MPNs' if others else ''}); "
+                             f"set it as MPN to use it")
+        if not parts and not strict:
+            why = "not found" if notes and notes[-1].startswith("closest") else "not found; add an MPN field to look it up"
+            return (refs, value, mpn, "-", "", "", "", "", "; ".join([why, *notes])), "skipped"
         why = "no stocked part with this MPN"
         if parts:
             why = f"{len(parts)} stocked, none match " + " / ".join(
                 x for x in (f"package {pkg_key}" if pkg_key else "", f"manufacturer {mfr!r}" if mfr else "") if x)
+            why += " (stocked in " + ", ".join(sorted({x.package for x in parts})) + ")"
         return (refs, value, mpn, "-", "", "", "", "", "; ".join([*notes, why, "NO MATCH"])), "unresolved"
-    if not footprint:
-        key = diode_package_key(p.package)
+    if kind == "other":
+        if not footprint:
+            notes.append("Footprint empty; check package")
+    elif not footprint:
+        key = package_key(p.package)
         fp = diode_footprint(key, kind == "LED") if key else None
         if fp:
             sch.set_property(sym, "Footprint", fp)
@@ -123,9 +172,13 @@ def cmd_assign(args) -> int:
             if not sym.in_bom or sym.ref.startswith("#"):
                 continue
             kind = kicad_sch.passive_kind(sym)
-            dkind = kicad_sch.diode_kind(sym) if kind is None and not args.no_diodes else None
-            if kind is None and dkind is None:
+            dkind = kicad_sch.diode_kind(sym) if kind is None else None
+            if dkind and args.no_diodes:
                 continue
+            if kind is None and dkind is None:
+                if args.no_other or not other_kind(sym):
+                    continue
+                dkind = "other"
             value = sym.prop("Value") or ""
             refs = ",".join(sym.refs)
             existing = next((n for n in sym.props if project.LCSC_LIKE.match(n) and (sym.prop(n) or "").strip()), None)
@@ -133,7 +186,7 @@ def cmd_assign(args) -> int:
                 rows.append((refs, value, "", sym.prop(existing), "", "", "", "", f"kept existing {existing}"))
                 continue
             if dkind:
-                row, status = assign_diode(sch, sym, dkind, conn, args, field)
+                row, status = assign_by_mpn(sch, sym, dkind, conn, args, field)
                 rows.append(row)
                 if status == "unresolved":
                     unresolved += len(sym.refs)
@@ -243,14 +296,14 @@ def _net_arg(s: str) -> tuple[str, float]:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="autopartselector", description=__doc__)
-    ap.add_argument("--db", default=str(update.default_db_path()), help="passives DB path")
+    ap.add_argument("--db", default=str(update.default_db_path()), help="parts DB path")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    u = sub.add_parser("update", help="download + build the passives DB (~1GB streamed, ~75MB stored)")
+    u = sub.add_parser("update", help="download + build the parts DB (~1GB streamed)")
     u.add_argument("--from-dir", help="read parts-fts5.db.zip.* chunks from this dir instead of downloading")
     u.set_defaults(func=cmd_update)
 
-    a = sub.add_parser("assign", help="pick parts for passives in a schematic (and its sub-sheets)")
+    a = sub.add_parser("assign", help="pick parts for a schematic (and its sub-sheets)")
     a.add_argument("schematic")
     a.add_argument("--size", default="0603", choices=list(CHIP), help="preferred (smallest) package")
     a.add_argument("--max-size", choices=list(CHIP), help="never go bigger than this")
@@ -267,7 +320,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="also consider non-chip inductor packages (LCSC only, no footprint)")
     a.add_argument("--field", help="LCSC field name (default: what the project's BOM uses, else LCSC)")
     a.add_argument("--mpn", action="store_true", help="also write an MPN field")
-    a.add_argument("--no-diodes", action="store_true", help="only do R/C/L")
+    a.add_argument("--no-diodes", action="store_true", help="don't look up diodes and LEDs")
+    a.add_argument("--no-other", action="store_true",
+                   help="don't look up other parts (ICs, transistors, crystals...) by part number")
     a.add_argument("--net", action="append", type=_net_arg, metavar="NAME=VOLTS",
                    help="voltage of a net whose name doesn't say it, e.g. --net VBAT=4.2 (repeatable)")
     a.add_argument("--no-net-voltage", action="store_true",

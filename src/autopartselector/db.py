@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -81,6 +82,11 @@ def parse_description(kind: str, desc: str, part: Part) -> None:
 
 
 def open_db(path: Path) -> sqlite3.Connection:
+    legacy = path.with_name("passives.sqlite3")
+    if not path.exists() and path.name == "parts.sqlite3" and legacy.exists():
+        sys.stderr.write(f"warning: using old passives-only DB {legacy}; "
+                         f"run `autopartselector update` to look up other parts\n")
+        path = legacy
     if not path.exists():
         raise SystemExit(f"parts DB not found at {path}\nrun: autopartselector update")
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
@@ -88,14 +94,41 @@ def open_db(path: Path) -> sqlite3.Connection:
     return conn
 
 
-def find_mpn(conn: sqlite3.Connection, mpn: str, min_stock: int) -> list[Part]:
-    """In-stock diode/LED parts whose MPN is `mpn`, or `mpn` plus a ' '/'-' suffix (e.g. 'B5819W SL')."""
+def find_mpn(conn: sqlite3.Connection, mpn: str, min_stock: int,
+             subcategories: tuple[str, ...] | None = DIODE_SUBCATEGORIES) -> list[Part]:
+    """In-stock parts whose MPN is `mpn`, or `mpn` plus a ' '/'-' suffix (e.g. 'B5819W SL').
+
+    Limited to `subcategories` (default: diodes/LEDs); None searches every part.
+    """
     esc = mpn.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    sub_sql = f"subcategory IN ({','.join('?' * len(subcategories))}) AND " if subcategories else ""
     rows = conn.execute(
         f"SELECT lcsc, mfr, manufacturer, package, library_type, stock, price, description FROM parts "
-        f"WHERE subcategory IN ({','.join('?' * len(DIODE_SUBCATEGORIES))}) AND stock >= ? "
+        f"WHERE {sub_sql}stock >= ? "
         f"AND (mfr = ? COLLATE NOCASE OR mfr LIKE ? ESCAPE '\\' OR mfr LIKE ? ESCAPE '\\')",
-        (*DIODE_SUBCATEGORIES, min_stock, mpn, esc + " %", esc + "-%"),
+        (*(subcategories or ()), min_stock, mpn, esc + " %", esc + "-%"),
+    )
+    return [
+        Part(r["lcsc"], r["mfr"], r["manufacturer"], r["package"], r["library_type"] == "Basic",
+             r["stock"], first_price(r["price"] or ""), r["description"] or "")
+        for r in rows
+    ]
+
+
+def find_mpn_prefix(conn: sqlite3.Connection, mpn: str, min_stock: int,
+                    subcategories: tuple[str, ...] | None = DIODE_SUBCATEGORIES, limit: int = 500) -> list[Part]:
+    """In-stock parts whose MPN starts with `mpn` ('TLV62569DDC' -> 'TLV62569DDCR'), highest stock first.
+
+    A lowercase 'x' in an otherwise upper-case MPN is a KiCad wildcard ('STM32F072CBTx') and matches any one character.
+    """
+    esc = mpn.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    if any(c.isupper() for c in mpn):
+        esc = esc.replace("x", "_")
+    sub_sql = f"subcategory IN ({','.join('?' * len(subcategories))}) AND " if subcategories else ""
+    rows = conn.execute(
+        f"SELECT lcsc, mfr, manufacturer, package, library_type, stock, price, description FROM parts "
+        f"WHERE {sub_sql}stock >= ? AND mfr LIKE ? ESCAPE '\\' ORDER BY stock DESC LIMIT ?",
+        (*(subcategories or ()), min_stock, esc + "%", limit),
     )
     return [
         Part(r["lcsc"], r["mfr"], r["manufacturer"], r["package"], r["library_type"] == "Basic",

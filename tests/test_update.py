@@ -31,11 +31,11 @@ def test_stream_extract_from_zipped_sqlite(tmp_path):
     for i in range(0, len(data), 50_000):
         (chunks / f"parts-fts5.db.zip.{i // 50_000 + 1:03d}").write_bytes(data[i:i + 50_000])
 
-    out = tmp_path / "passives.sqlite3"
+    out = tmp_path / "parts.sqlite3"
     n = update.build(out, chunks, min_stock=1)
     got = {r[0]: r for r in sqlite3.connect(out).execute("SELECT lcsc, library_type, description FROM parts")}
     assert 25804 in got and got[25804][1] == "Basic"
-    assert 1 not in got  # not a kept subcategory
+    assert got[1][2] is None  # other subcategories are kept, without their description
     assert got[2][2].startswith("100nF 16V X7R xxx") and len(got[2][2]) > 9000
     assert 100 not in got  # stock 0 filtered
-    assert n == len(got) == 2 + 1999
+    assert n == len(got) == 3 + 1999

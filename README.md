@@ -1,9 +1,10 @@
 # autopartselector
 
-Fills in `Footprint` and `LCSC` for the resistors, capacitors, inductors and diodes in a KiCad schematic.
+Fills in `Footprint` and `LCSC` for the resistors, capacitors, inductors and diodes in a KiCad schematic, and
+`LCSC` for everything else that has a part number (regulators, MCUs, transistors, crystals…).
 
 For each R/C/L it picks the smallest package, no smaller than a size you choose, that meets the part's voltage,
-current and power needs. Diodes are matched by part number. It prefers JLCPCB Basic parts.
+current and power needs. Diodes and other parts are matched by part number. It prefers JLCPCB Basic parts.
 
 ## Install
 
@@ -65,6 +66,27 @@ Basic, then the exact part number, then stock.
 - A `Manufacturer` field limits matches to that maker.
 - Values without a part number (`D`, `D_Schottky`) are reported as no match. LEDs without one (`LED GREEN`) are skipped.
 
+### Other parts
+
+Every other symbol in the BOM (`U…`, `Q…`, `Y…`, `J…`, `F…`, `FB…` and so on) is looked up by part number too, the
+same way as diodes: an `MPN` field if there is one, otherwise the Value (`AMS1117-3.3`, `LM358DR`).
+
+- Only `LCSC` is written. The footprint is never changed.
+- If the symbol has a footprint in a package it recognises (SOIC/SOP, SSOP, TSSOP, MSOP, QFN, DFN, LQFP, TQFP,
+  SOT-23-x, SOT-223, SOT-89, TO-252, TO-263, plus the diode packages), only parts in that package are used.
+  QFN and DFN are matched on pin count only. If the footprint is unrecognised, any package is allowed, so check the
+  `Pkg` column.
+- Values left as a generic symbol name (`Conn_01x04`, `Q_NMOS_GSD`) are skipped.
+- If a part number isn't found, the closest stocked part whose MPN starts with it (in the footprint's package, if
+  known) is shown in the Notes column, e.g. `closest TPS56339DDCR (C2071106, TSOT-23-6, …)`. It isn't written:
+  copy it into an `MPN` field to use it. A lowercase `x` in a Value (`STM32F072CBTx`) matches any one character.
+- If a part number from the Value isn't found, the symbol is skipped with a note. If a part number from an `MPN`
+  field isn't found, or is only stocked in a different package, it counts as unresolved.
+- `TP`, `H`, `MH`, `FID`, `NT` and `LOGO` references are left alone, and so are `R`/`C`/`L` symbols the passive
+  matcher doesn't handle (such as polarized caps).
+
+`--no-other` turns this off.
+
 ### Options
 
 | Flag | Effect |
@@ -80,7 +102,8 @@ Basic, then the exact part number, then stock.
 | `--allow-power-inductors` | also use non-chip inductor packages (sets LCSC only) |
 | `--field NAME` | field to write the LCSC number to |
 | `--mpn` | also write an `MPN` field |
-| `--no-diodes` | only do R/C/L |
+| `--no-diodes` | don't look up diodes and LEDs |
+| `--no-other` | don't look up other parts by part number |
 | `--net NAME=V` | voltage for a net whose name doesn't say it (repeatable) |
 | `--no-net-voltage` | don't estimate voltages from nets |
 | `--overwrite` | re-pick symbols that already have an `LCSC` |
@@ -92,5 +115,6 @@ because KiCad stores the same fields for every copy.
 ## Data
 
 Part data comes from the [kicad-jlcpcb-tools](https://github.com/Bouni/kicad-jlcpcb-tools) parts database.
-`update` keeps only in-stock chip resistors, MLCCs, SMD inductors, diodes, TVS/ESD parts and indicator LEDs, in
-`~/.cache/autopartselector/`. Re-run it after upgrading from a version without diode support.
+`update` keeps every in-stock part in `~/.cache/autopartselector/parts.sqlite3`, with descriptions only for the
+passives and diodes it matches on. Re-run it after upgrading from a version without other-part support (the old
+`passives.sqlite3` still works for R/C/L and diodes).

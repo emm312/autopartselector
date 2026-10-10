@@ -1,9 +1,9 @@
-"""Build a small passives-only DB from Bouni's kicad-jlcpcb-tools parts DB.
+"""Build a small in-stock parts DB from Bouni's kicad-jlcpcb-tools parts DB.
 
 The upstream DB is a ~5GB SQLite file shipped as a split zip (~1GB). Rather than
 unpacking it to disk, we inflate the zip stream and decode SQLite table-leaf pages
-on the fly, keeping only rows from `parts_content` (the FTS5 content table) whose
-category is one we care about.
+on the fly, keeping the rows from `parts_content` (the FTS5 content table). Descriptions
+are only kept for the categories that are matched on them (passives, diodes).
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ COLUMNS = [
     "lcsc", "category", "subcategory", "mfr", "package", "joints",
     "manufacturer", "library_type", "description", "datasheet", "price", "stock",
 ]
+# Subcategories whose description and datasheet are kept; other parts are matched by MPN only.
 KEEP_SUBCATEGORIES = {
     "Chip Resistor - Surface Mount",
     "Current Sense / Shunt Resistors",
@@ -57,7 +58,7 @@ def cache_dir() -> Path:
 
 
 def default_db_path() -> Path:
-    return cache_dir() / "passives.sqlite3"
+    return cache_dir() / "parts.sqlite3"
 
 
 # --- byte sources -----------------------------------------------------------
@@ -196,12 +197,11 @@ def _wanted(rec: list | None) -> bool:
         rec is not None
         and len(rec) == len(COLUMNS) + 1
         and isinstance(rec[1], str) and rec[1].startswith("C")
-        and rec[3] in KEEP_SUBCATEGORIES
     )
 
 
 def extract_rows(data: Iterable[bytes]) -> Iterator[list]:
-    """Yield decoded parts_content rows (without the id column) for kept categories."""
+    """Yield decoded parts_content rows (without the id column)."""
     pending: dict[int, tuple[bytearray, int]] = {}  # next overflow page -> (payload so far, total len)
     stats = {"overflow_lost": 0}
     for pageno, page in _pages(data):
@@ -253,8 +253,10 @@ def build(out: Path, chunk_dir: Path | None = None, min_stock: int = 1) -> int:
             continue
         if stock < min_stock:
             continue
+        keep = d["subcategory"] in KEEP_SUBCATEGORIES
         batch.append((lcsc, d["category"], d["subcategory"], d["mfr"], d["package"], d["manufacturer"],
-                      d["library_type"], d["description"], d["datasheet"], str(d["price"] or ""), stock))
+                      d["library_type"], d["description"] if keep else None, d["datasheet"] if keep else None,
+                      str(d["price"] or ""), stock))
         n += 1
         if len(batch) >= 5000:
             conn.executemany("INSERT OR REPLACE INTO parts VALUES (?,?,?,?,?,?,?,?,?,?,?)", batch)
