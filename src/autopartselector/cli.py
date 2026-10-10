@@ -12,7 +12,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import db, kicad_sch, project, select, update
+from . import db, kicad_sch, netlist, project, select, update
 from .footprints import CHIP, diode_footprint, diode_package_key, footprint_for, footprint_package_key
 from .parse import parse_requirement
 
@@ -104,6 +104,13 @@ def cmd_assign(args) -> int:
     root = Path(args.schematic)
     field, source = (args.field, "--field") if args.field else project.detect_field(root, sheets)
     print(f"LCSC field: {field!r} ({source})")
+    ref_nets: dict[str, list[str]] = {}
+    if not args.no_net_voltage:
+        try:
+            ref_nets = netlist.export_nets(root)
+        except RuntimeError as e:
+            print(f"warning: {e}; not using net voltages", file=sys.stderr)
+    net_overrides = dict(args.net or [])
     conn = db.open_db(Path(args.db))
     cache: dict[str, tuple[dict, list]] = {}
 
@@ -137,6 +144,13 @@ def cmd_assign(args) -> int:
             fields = {k: sym.prop(k) or "" for k in sym.props}
             req = parse_requirement(kind, value, fields)
             notes = list(req.problems)
+            if kind in ("R", "C") and ref_nets:
+                est = [netlist.across(ref_nets[r], net_overrides) for r in sym.refs if r in ref_nets]
+                est = [v for v in est if v is not None]
+                if est:
+                    req.net_voltage = max(est)
+                    if req.voltage is not None and req.voltage < req.net_voltage:
+                        notes.append(f"nets suggest {req.net_voltage:g}V")
             choice = select.choose(req, by_pkg, ladder, opts) if req.value is not None else None
             if choice is None:
                 unresolved += len(sym.refs)
@@ -210,6 +224,16 @@ def cmd_bom(args) -> int:
     return 0
 
 
+def _net_arg(s: str) -> tuple[str, float]:
+    name, sep, volts = s.rpartition("=")
+    try:
+        if not sep or not name:
+            raise ValueError
+        return name, float(volts.rstrip("Vv"))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected NAME=VOLTS, got {s!r}")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="autopartselector", description=__doc__)
     ap.add_argument("--db", default=str(update.default_db_path()), help="passives DB path")
@@ -237,6 +261,10 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--field", help="LCSC field name (default: what the project's BOM uses, else LCSC)")
     a.add_argument("--mpn", action="store_true", help="also write an MPN field")
     a.add_argument("--no-diodes", action="store_true", help="only do R/C/L")
+    a.add_argument("--net", action="append", type=_net_arg, metavar="NAME=VOLTS",
+                   help="voltage of a net whose name doesn't say it, e.g. --net VBAT=4.2 (repeatable)")
+    a.add_argument("--no-net-voltage", action="store_true",
+                   help="don't estimate voltage ratings from the nets a part is connected to")
     a.add_argument("--overwrite", action="store_true", help="re-pick symbols that already have an LCSC field")
     a.add_argument("--dry-run", action="store_true", help="print a diff instead of writing")
     a.set_defaults(func=cmd_assign)

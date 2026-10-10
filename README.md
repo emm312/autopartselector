@@ -42,6 +42,17 @@ What each rating means:
   X7S or X8R is allowed.
 - **L**: both listed currents (rated and saturation) ≥ I.
 
+### Voltage from nets
+
+If a capacitor or resistor has no voltage given, it's estimated from the names of the nets on its pins (using
+KiCad's netlist): `+3V3`, `+5V HDMI`, `ETH +1V2`, `-12V` and `VBUS` (5V) are read as rails, `GND`/`AGND`/`VSS` as 0V.
+A part between two known rails gets the difference. A part between a rail and an unnamed net gets the rail. A part
+between ground and an unnamed net gets no estimate. Signals like `3V3_PG` or `5V_EN` aren't treated as rails.
+
+The estimate sets cap voltage ratings (times `--cap-derate`) and the resistor working-voltage check, but not resistor
+power. A voltage you give explicitly always wins; if it's lower than the nets suggest, the report says so. Names it
+can't read (`+BATT`, `VCC`) can be given with `--net +BATT=16.8`.
+
 ### Diodes
 
 Diodes (references `D…`, `LED…`) are looked up by part number: an `MPN` field if there is one, otherwise the Value
@@ -69,6 +80,8 @@ Basic, then the exact part number, then stock.
 | `--field NAME` | field to write the LCSC number to |
 | `--mpn` | also write an `MPN` field |
 | `--no-diodes` | only do R/C/L |
+| `--net NAME=V` | voltage for a net whose name doesn't say it (repeatable) |
+| `--no-net-voltage` | don't estimate voltages from nets |
 | `--overwrite` | re-pick symbols that already have an `LCSC` |
 
 Symbols that already have an LCSC number (in any `LCSC…`/`JLC…` field) are left alone. Polarized caps and anything excluded from the BOM are skipped.

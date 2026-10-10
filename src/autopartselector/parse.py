@@ -83,12 +83,19 @@ class Requirement:
     power: float | None = None
     tolerance: float | None = None
     dielectric: str | None = None
+    net_voltage: float | None = None  # estimated from net names; used only when `voltage` is unset
     problems: list[str] = field(default_factory=list)
+
+    @property
+    def working_voltage(self) -> float | None:
+        return self.voltage if self.voltage is not None else self.net_voltage
 
     def describe(self) -> str:
         bits = []
         if self.voltage is not None:
             bits.append(f"{fmt_si(self.voltage)}V")
+        elif self.net_voltage is not None:
+            bits.append(f"{fmt_si(self.net_voltage)}V(net)")
         if self.current is not None:
             bits.append(f"{fmt_si(self.current)}A")
         if self.power is not None:

@@ -55,13 +55,14 @@ def meets(req: Requirement, p: Part, opts: Options) -> bool:
         need = required_power(req)
         if need is not None and (p.power is None or p.power < need):
             return False
-        if req.voltage is not None and p.voltage is not None and p.voltage < req.voltage:
+        v = req.working_voltage
+        if v is not None and p.voltage is not None and p.voltage < v:
             return False
         tol = req.tolerance if req.tolerance is not None else opts.default_res_tolerance
         if p.tolerance is None or p.tolerance > tol + 1e-9:
             return False
     elif req.kind == "C":
-        v = req.voltage * opts.cap_derate if req.voltage is not None else None
+        v = req.working_voltage * opts.cap_derate if req.working_voltage is not None else None
         if opts.min_voltage is not None:
             v = max(v or 0.0, opts.min_voltage)
         if v is not None and (p.voltage is None or p.voltage < v):
