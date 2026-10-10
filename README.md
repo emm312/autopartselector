@@ -59,7 +59,8 @@ Basic, then the exact part number, then stock.
 |---|---|
 | `--size` | smallest package to use (default `0603`) |
 | `--max-size` | largest package to use |
-| `--basic-bump N` | allow up to N sizes larger to get a Basic part |
+| `--prefer smallest\|basic` | `smallest` (default): smallest package that fits. `basic`: smallest Basic part at any size up to `--max-size`, else smallest Extended |
+| `--basic-bump N` | with `--prefer smallest`, allow up to N sizes larger to get a Basic part |
 | `--cap-derate X` | cap voltage margin multiplier |
 | `--min-voltage V` | minimum cap rating when none is given |
 | `--res-tolerance %` | default resistor tolerance |

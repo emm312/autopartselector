@@ -95,7 +95,7 @@ def assign_diode(sch, sym, kind: str, conn, args, field: str) -> tuple[tuple, st
 def cmd_assign(args) -> int:
     opts = select.Options(
         size=args.size, max_size=args.max_size, cap_derate=args.cap_derate, min_voltage=args.min_voltage,
-        default_res_tolerance=args.res_tolerance / 100, basic_bump=args.basic_bump,
+        default_res_tolerance=args.res_tolerance / 100, prefer=args.prefer, basic_bump=args.basic_bump,
         allow_power_inductors=args.allow_power_inductors,
     )
     sheets, warnings = kicad_sch.load_hierarchy(Path(args.schematic))
@@ -227,8 +227,11 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--cap-derate", type=float, default=1.0, help="cap voltage rating >= V * this")
     a.add_argument("--min-voltage", type=float, help="minimum cap voltage rating when none is given")
     a.add_argument("--res-tolerance", type=float, default=1.0, help="default resistor tolerance, %%")
+    a.add_argument("--prefer", choices=("smallest", "basic"), default="smallest",
+                   help="smallest: smallest package that fits, Basic only within that size; "
+                        "basic: smallest Basic part at any size up to --max-size (default: smallest)")
     a.add_argument("--basic-bump", type=int, default=0,
-                   help="allow up to N sizes larger than the smallest match to get a Basic part")
+                   help="with --prefer=smallest: allow up to N sizes larger to get a Basic part")
     a.add_argument("--allow-power-inductors", action="store_true",
                    help="also consider non-chip inductor packages (LCSC only, no footprint)")
     a.add_argument("--field", help="LCSC field name (default: what the project's BOM uses, else LCSC)")

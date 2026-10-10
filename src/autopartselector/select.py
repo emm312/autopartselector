@@ -20,7 +20,8 @@ class Options:
     cap_derate: float = 1.0
     min_voltage: float | None = None
     default_res_tolerance: float = 0.01
-    basic_bump: int = 0  # extra size steps allowed to land on a Basic part
+    prefer: str = "smallest"  # "smallest": size first; "basic": any size up to max_size if it gets a Basic part
+    basic_bump: int = 0  # with prefer="smallest": extra size steps allowed to land on a Basic part
     allow_power_inductors: bool = False
 
 
@@ -106,7 +107,7 @@ def choose(req: Requirement, parts_by_pkg: dict[str, list[Part]], ladder, opts: 
         ok = [p for pkg in pkgs for p in parts_by_pkg.get(pkg, ()) if meets(req, p, opts)]
         if ok or steps:
             steps.append(ok)
-        if len(steps) > opts.basic_bump:
+        if len(steps) > (math.inf if opts.prefer == "basic" else opts.basic_bump):
             break
     if not steps:
         return None

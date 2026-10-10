@@ -40,6 +40,13 @@ def test_basic_bump_allows_bigger_basic():
     assert pick("C", "100n 100V", CAPS, size="0603", basic_bump=1).part.lcsc == 5
 
 
+def test_prefer_basic():
+    assert pick("C", "100n 100V", CAPS, size="0603", prefer="smallest").part.lcsc == 4
+    assert pick("C", "100n 100V", CAPS, size="0603", prefer="basic").part.lcsc == 5
+    assert pick("C", "100n 100V", CAPS, size="0603", prefer="basic", max_size="0805").part.lcsc == 4
+    assert pick("C", "100n", CAPS, size="0402", prefer="basic").part.lcsc == 1  # smallest Basic still wins
+
+
 def test_max_size():
     assert pick("C", "100n 100V", CAPS, size="0603", max_size="0603") is None
 
