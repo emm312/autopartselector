@@ -13,6 +13,11 @@ SUBCATEGORIES = {
     "C": ("Multilayer Ceramic Capacitors MLCC - SMD/SMT",),
     "L": ("Inductors (SMD)", "Power Inductors", "Molding Power Inductors"),
 }
+DIODE_SUBCATEGORIES = (
+    "Switching Diodes", "Diodes - General Purpose", "Schottky Diodes", "Zener Diodes",
+    "Fast Recovery / High Efficiency Diodes", "Super Barrier Rectifiers (SBR)", "Avalanche Diodes",
+    "Bridge Rectifiers", "ESD and Surge Protection (TVS/ESD)", "LED Indication - Discrete",
+)
 # Description token that carries the primary value, by unit suffix.
 VALUE_UNIT = {"R": "Ω", "C": "F", "L": "H"}
 
@@ -74,6 +79,22 @@ def open_db(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def find_mpn(conn: sqlite3.Connection, mpn: str, min_stock: int) -> list[Part]:
+    """In-stock diode/LED parts whose MPN is `mpn`, or `mpn` plus a ' '/'-' suffix (e.g. 'B5819W SL')."""
+    esc = mpn.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    rows = conn.execute(
+        f"SELECT lcsc, mfr, manufacturer, package, library_type, stock, price, description FROM parts "
+        f"WHERE subcategory IN ({','.join('?' * len(DIODE_SUBCATEGORIES))}) AND stock >= ? "
+        f"AND (mfr = ? COLLATE NOCASE OR mfr LIKE ? ESCAPE '\\' OR mfr LIKE ? ESCAPE '\\')",
+        (*DIODE_SUBCATEGORIES, min_stock, mpn, esc + " %", esc + "-%"),
+    )
+    return [
+        Part(r["lcsc"], r["mfr"], r["manufacturer"], r["package"], r["library_type"] == "Basic",
+             r["stock"], first_price(r["price"] or ""), r["description"] or "")
+        for r in rows
+    ]
 
 
 def load_parts(conn: sqlite3.Connection, kind: str, min_stock: int) -> list[Part]:

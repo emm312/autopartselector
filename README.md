@@ -1,9 +1,9 @@
 # autopartselector
 
-Fills in `Footprint` and `LCSC` for the resistors, capacitors and inductors in a KiCad schematic.
+Fills in `Footprint` and `LCSC` for the resistors, capacitors, inductors and diodes in a KiCad schematic.
 
-For each passive it picks the smallest package, no smaller than a size you choose, that meets the part's voltage,
-current and power needs. It prefers JLCPCB Basic parts.
+For each R/C/L it picks the smallest package, no smaller than a size you choose, that meets the part's voltage,
+current and power needs. Diodes are matched by part number. It prefers JLCPCB Basic parts.
 
 ## Install
 
@@ -42,6 +42,17 @@ What each rating means:
   X7S or X8R is allowed.
 - **L**: both listed currents (rated and saturation) ≥ I.
 
+### Diodes
+
+Diodes (references `D…`, `LED…`) are looked up by part number: an `MPN` field if there is one, otherwise the Value
+(`1N4148W`, `SS34`, `BZT52C5V1`). Listings with a suffix, such as `B5819W SL`, also count. Among matches it prefers
+Basic, then the exact part number, then stock.
+
+- If the symbol already has a footprint, only parts in that package are used and the footprint is kept.
+  If not, the footprint is set from the chosen part.
+- A `Manufacturer` field limits matches to that maker.
+- Values without a part number (`D`, `D_Schottky`) are reported as no match. LEDs without one (`LED GREEN`) are skipped.
+
 ### Options
 
 | Flag | Effect |
@@ -56,6 +67,7 @@ What each rating means:
 | `--allow-power-inductors` | also use non-chip inductor packages (sets LCSC only) |
 | `--field NAME` | field to write the LCSC number to |
 | `--mpn` | also write an `MPN` field |
+| `--no-diodes` | only do R/C/L |
 | `--overwrite` | re-pick symbols that already have an `LCSC` |
 
 Symbols that already have an LCSC number (in any `LCSC…`/`JLC…` field) are left alone. Polarized caps and anything excluded from the BOM are skipped.
@@ -65,4 +77,5 @@ because KiCad stores the same fields for every copy.
 ## Data
 
 Part data comes from the [kicad-jlcpcb-tools](https://github.com/Bouni/kicad-jlcpcb-tools) parts database.
-`update` keeps only in-stock chip resistors, MLCCs and SMD inductors, in `~/.cache/autopartselector/`.
+`update` keeps only in-stock chip resistors, MLCCs, SMD inductors, diodes, TVS/ESD parts and indicator LEDs, in
+`~/.cache/autopartselector/`. Re-run it after upgrading from a version without diode support.

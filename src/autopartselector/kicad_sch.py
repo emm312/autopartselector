@@ -225,6 +225,17 @@ def load_hierarchy(root_path: Path) -> tuple[list[Schematic], list[str]]:
 PASSIVE_NAME = re.compile(r"^(R|C|L)(_Small)?(_US)?$")
 
 
+_DIODE_REF = re.compile(r"^(D|LED)[0-9?]")
+
+
+def diode_kind(sym: Symbol) -> str | None:
+    """'LED', 'D', or None, from the reference designator."""
+    m = _DIODE_REF.match(sym.ref)
+    if not m:
+        return None
+    return "LED" if m.group(1) == "LED" or "LED" in sym.lib_id.split(":", 1)[-1].upper() else "D"
+
+
 def passive_kind(sym: Symbol) -> str | None:
     name = sym.lib_id.split(":", 1)[-1]
     m = PASSIVE_NAME.match(name)

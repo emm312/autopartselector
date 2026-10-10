@@ -33,6 +33,17 @@ KEEP_SUBCATEGORIES = {
     "Inductors (SMD)",
     "Power Inductors",
     "Molding Power Inductors",
+    # diodes / LEDs (matched by part number)
+    "Switching Diodes",
+    "Diodes - General Purpose",
+    "Schottky Diodes",
+    "Zener Diodes",
+    "Fast Recovery / High Efficiency Diodes",
+    "Super Barrier Rectifiers (SBR)",
+    "Avalanche Diodes",
+    "Bridge Rectifiers",
+    "ESD and Surge Protection (TVS/ESD)",
+    "LED Indication - Discrete",
 }
 
 PAGE_SIZE = 4096  # overwritten from the DB header
@@ -250,10 +261,11 @@ def build(out: Path, chunk_dir: Path | None = None, min_stock: int = 1) -> int:
             batch.clear()
     conn.executemany("INSERT OR REPLACE INTO parts VALUES (?,?,?,?,?,?,?,?,?,?,?)", batch)
     conn.execute("CREATE INDEX idx_sub_pkg ON parts(subcategory, package)")
+    conn.execute("CREATE INDEX idx_mfr ON parts(mfr COLLATE NOCASE)")
     conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
     conn.execute("INSERT INTO meta VALUES ('built_at', ?)", (time.strftime("%Y-%m-%dT%H:%M:%S"),))
     conn.commit()
     conn.close()
     os.replace(tmp, out)
-    sys.stderr.write(f"  wrote {n} passives to {out} in {time.time() - t0:.0f}s\n")
+    sys.stderr.write(f"  wrote {n} parts to {out} in {time.time() - t0:.0f}s\n")
     return n

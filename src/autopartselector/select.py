@@ -7,7 +7,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from .db import Part
-from .footprints import CHIP, package_area
+from .footprints import CHIP, diode_package_key, package_area
 from .parse import Requirement
 
 DEFAULT_DIELECTRICS = {"C0G", "X5R", "X6S", "X6T", "X7R", "X7S", "X7T", "X8R", "X8L"}
@@ -120,6 +120,19 @@ def choose(req: Requirement, parts_by_pkg: dict[str, list[Part]], ladder, opts: 
     bumped = opts.size if best.package != opts.size else None
     reason = "basic" if best.basic else "extended"
     return Choice(best, bumped, reason)
+
+
+def choose_mpn(mpn: str, parts: list[Part], package_key: str | None = None,
+               manufacturer: str | None = None) -> Part | None:
+    """Best part for an MPN: Basic first, then exact MPN over suffixed variants, then stock."""
+    ok = [
+        p for p in parts
+        if (package_key is None or diode_package_key(p.package) == package_key)
+        and (not manufacturer or manufacturer.lower() in (p.manufacturer or "").lower())
+    ]
+    if not ok:
+        return None
+    return min(ok, key=lambda p: (not p.basic, p.mfr.lower() != mpn.lower(), -p.stock))
 
 
 def index_by_package(parts: list[Part]) -> dict[str, list[Part]]:

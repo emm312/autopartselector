@@ -49,3 +49,66 @@ def footprint_for(kind: str, package: str) -> str | None:
     if package not in codes:
         return None
     return f"{lib}:{prefix}_{package}_{CHIP[package][2]}Metric"
+
+
+# --- diodes / LEDs -------------------------------------------------------------
+# JLC writes the same package many ways ("SMA(DO-214AC)", "DO-214AC(SMA)", "SMA"); KiCad footprint names
+# use yet another spelling. Both are reduced to one key so they can be compared.
+_DIODE_ALIASES = {
+    "DO-214AC": "SMA", "DO-214AA": "SMB", "DO-214AB": "SMC",
+    "SOD-123FL": "SOD-123F",
+    "LL-34": "MINIMELF", "SOD-80": "MINIMELF", "MINIMELF": "MINIMELF", "LL-41": "MELF", "MELF": "MELF",
+    "DFN1006-2": "SOD-882", "DFN1006-2L": "SOD-882", "SOD-882": "SOD-882",
+    "SC-70": "SOT-323", "SC-70-6": "SOT-363", "SOT-23-3": "SOT-23", "SOT-23-3L": "SOT-23", "TO-236": "SOT-23",
+    "SOT-23-6L": "SOT-23-6", "SOT-363-6L": "SOT-363",
+}
+# Packages we can recognise (to match against an existing footprint) but don't pick a footprint for.
+_DIODE_NO_FOOTPRINT = {"SMAF", "SMBF", "SOD-123W", "DO-41", "DO-35", "DO-15", "DO-201AD", "DO-27"}
+_DIODE_FOOTPRINTS = {
+    **{k: f"Diode_SMD:D_{k}" for k in (
+        "SOD-123", "SOD-123F", "SOD-323", "SOD-323F", "SOD-523", "SOD-923", "SOD-882", "SOD-128",
+        "SMA", "SMB", "SMC",
+    )},
+    "MINIMELF": "Diode_SMD:D_MiniMELF",
+    "MELF": "Diode_SMD:D_MELF",
+    "SOT-23": "Package_TO_SOT_SMD:SOT-23",
+    "SOT-23-6": "Package_TO_SOT_SMD:SOT-23-6",
+    "SOT-323": "Package_TO_SOT_SMD:SOT-323_SC-70",
+    "SOT-363": "Package_TO_SOT_SMD:SOT-363_SC-70-6",
+    "SOT-523": "Package_TO_SOT_SMD:SOT-523",
+}
+_KNOWN_DIODE_KEYS = set(_DIODE_FOOTPRINTS) | set(CHIP) | _DIODE_NO_FOOTPRINT
+
+
+def _canon(tok: str) -> str | None:
+    t = tok.strip().upper()
+    t = _DIODE_ALIASES.get(t, t)
+    return t if t in _KNOWN_DIODE_KEYS else None
+
+
+def diode_package_key(package: str) -> str | None:
+    """'SMA(DO-214AC)' -> 'SMA', 'DFN1006-2L' -> 'SOD-882', '0603' -> '0603'; None if unknown."""
+    for tok in re.split(r"[()\s,]+", package):
+        k = _canon(tok)
+        if k:
+            return k
+    return None
+
+
+def footprint_package_key(footprint: str) -> str | None:
+    """'Diode_SMD:D_SOD-123F' -> 'SOD-123F', 'LED_SMD:LED_0603_1608Metric' -> '0603'."""
+    name = footprint.split(":", 1)[-1]
+    name = re.sub(r"^(D|LED)_", "", name)
+    for tok in (name.split("_")[0], name):
+        k = _canon(tok)
+        if k:
+            return k
+    return None
+
+
+def diode_footprint(key: str, led: bool) -> str | None:
+    if key in CHIP:
+        if key not in ("0201", "0402", "0603", "0805", "1206", "1210", "1812", "2010", "2512"):
+            return None
+        return f"{'LED_SMD:LED' if led else 'Diode_SMD:D'}_{key}_{CHIP[key][2]}Metric"
+    return _DIODE_FOOTPRINTS.get(key)

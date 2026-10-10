@@ -12,7 +12,7 @@ def test_stream_extract_from_zipped_sqlite(tmp_path):
     rows = [
         ("C25804", "Resistors", "Chip Resistor - Surface Mount", "0603WAF1002T5E", "0603", 2, "UNI-ROYAL",
          "Basic", "100mW 10kΩ 75V ±1%", "ds", "1-:0.002", 22960732),
-        ("C1", "Diodes", "Zener Diodes", "x", "SOD-123", 2, "m", "Extended", "d", "ds", "1-:0.1", 5),
+        ("C1", "Transistors", "MOSFETs", "x", "SOT-23", 2, "m", "Extended", "d", "ds", "1-:0.1", 5),
     ]
     rows += [(f"C{100 + i}", "Resistors", "Chip Resistor - Surface Mount", "z", "0402", 2, "m", "Extended",
               f"{i}Ω", "", "", i) for i in range(2000)]
@@ -35,7 +35,7 @@ def test_stream_extract_from_zipped_sqlite(tmp_path):
     n = update.build(out, chunks, min_stock=1)
     got = {r[0]: r for r in sqlite3.connect(out).execute("SELECT lcsc, library_type, description FROM parts")}
     assert 25804 in got and got[25804][1] == "Basic"
-    assert 1 not in got  # not a passive subcategory
+    assert 1 not in got  # not a kept subcategory
     assert got[2][2].startswith("100nF 16V X7R xxx") and len(got[2][2]) > 9000
     assert 100 not in got  # stock 0 filtered
     assert n == len(got) == 2 + 1999
