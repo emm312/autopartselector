@@ -40,7 +40,8 @@ What each rating means:
 
 - **R**: power ≥ the largest of P, I²R and V²/R. Tolerance defaults to 1%.
 - **C**: voltage rating ≥ V × `--cap-derate` (default 1). If no dielectric is given, any of C0G, X5R, X6S, X7R,
-  X7S or X8R is allowed.
+  X7S or X8R is allowed. Listings whose ratings can't fit their package (a garbled `51000uF C0G` 0402) are ignored:
+  more than 10⁴ µJ/mm² of C·V² for C0G, or 5×10⁴ for other dielectrics.
 - **L**: both listed currents (rated and saturation) ≥ I. Listings whose ratings can't fit their package (JLC lists
   some 4x4mm power inductors as `0402`) are ignored: more than 20 µJ/mm² of L·I² for a chip size, or 100 µJ/mm² for
   an `SMD,AxBmm` package. If the symbol's Description or Value says `shielded`, only shielded (or molded) parts

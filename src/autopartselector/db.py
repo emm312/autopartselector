@@ -96,6 +96,19 @@ def implausible_inductor(p: Part) -> bool:
     return density > MAX_UJ_PER_MM2["chip" if p.package in CHIP else "smd"]
 
 
+# Most energy (C * V^2) an MLCC can store per mm^2 of footprint, by dielectric. Genuine class-II parts reach
+# ~2e4 uJ/mm^2 and C0G ~3e3 at any size; listings far above that have a garbled description ('51000uF C0G 0402').
+MAX_CAP_UJ_PER_MM2 = {"C0G": 1e4, "other": 5e4}
+
+
+def implausible_capacitor(p: Part) -> bool:
+    area = package_area(p.package)
+    if not area or not p.value or not p.voltage:
+        return False
+    density = p.value * p.voltage ** 2 * 1e6 / area
+    return density > MAX_CAP_UJ_PER_MM2["C0G" if p.dielectric == "C0G" else "other"]
+
+
 def open_db(path: Path) -> sqlite3.Connection:
     legacy = path.with_name("passives.sqlite3")
     if not path.exists() and path.name == "parts.sqlite3" and legacy.exists():
@@ -164,6 +177,7 @@ def load_parts(conn: sqlite3.Connection, kind: str, min_stock: int) -> list[Part
         p = Part(r["lcsc"], r["mfr"], r["manufacturer"], r["package"], r["library_type"] == "Basic",
                  r["stock"], first_price(r["price"] or ""), r["description"] or "")
         parse_description(kind, p.description, p)
-        if p.value is not None and not (kind == "L" and implausible_inductor(p)):
-            out.append(p)
+        if p.value is None or (kind == "L" and implausible_inductor(p)) or (kind == "C" and implausible_capacitor(p)):
+            continue
+        out.append(p)
     return out

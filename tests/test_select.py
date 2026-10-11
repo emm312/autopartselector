@@ -123,3 +123,14 @@ def test_implausible_inductor_listings():
     assert not implausible_inductor(part(5, "L", "1210", "1.9A 2.1A 22uH 315mΩ Molded Inductor ±20%"))
     assert not implausible_inductor(part(6, "L", "SMD,16.5x15.5mm", "15uH 22A 25.5A 7.5mΩ ±20%"))
     assert not implausible_inductor(part(7, "L", "0402", "10nH 300mA ±5%"))
+
+
+def test_implausible_capacitor_listings():
+    from autopartselector.db import implausible_capacitor
+    assert implausible_capacitor(part(1, "C", "0402", "50V 51000uF C0G"))  # garbled: should be 5.1pF
+    assert implausible_capacitor(part(2, "C", "0402", "100uF 50V X5R ±20%"))
+    # the densest genuine parts of each kind stay
+    assert not implausible_capacitor(part(3, "C", "1206", "100V 10uF X6S ±10%"))
+    assert not implausible_capacitor(part(4, "C", "0201", "16V 2.2uF X5R ±20%"))
+    assert not implausible_capacitor(part(5, "C", "2220", "200nF 630V C0G ±10%"))
+    assert not implausible_capacitor(part(6, "C", "0603", "22uF 25V ±20%"))  # no dielectric given
