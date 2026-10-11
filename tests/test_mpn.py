@@ -4,7 +4,7 @@ import pytest
 
 from autopartselector import cli
 from autopartselector.db import Part
-from autopartselector.footprints import footprint_package_key, package_key
+from autopartselector.footprints import Package, footprint_package_key, package_key, parse_footprint, parse_package
 from autopartselector.kicad_sch import Schematic
 from autopartselector.select import choose_mpn
 from test_diodes import sym
@@ -15,9 +15,11 @@ from test_diodes import sym
     ("TSOT-23-6", "SOT-23-6"), ("SOT-223-3", "SOT-223"), ("QFN-32-EP(5x5)", "QFN-32"), ("WQFN-16(3x3)", "QFN-16"),
     ("DFN-8(2x2)", "DFN-8"), ("LQFP-48(7x7)", "LQFP-48"), ("TO-252-2(DPAK)", "TO-252"), ("HTSSOP-20", "TSSOP-20-EP"),
     ("SOT-23(TO-236)", "SOT-23"), ("SC-70-5", "SOT-353"), ("SOT223", "SOT-223"), ("SOT-23-5L", "SOT-23-5"),
-    ("SOT-223-3L", "SOT-223"), ("TO-252-2L", "TO-252"), ("SO-8", "SOIC-8"), ("SOIC-16-300mil", "SOIC-16W"),
+    ("SOT-223-3L", "SOT-223"), ("TO-252-2L", "TO-252"), ("SO-8", "SOIC-8"), ("SOIC-16-300mil", "SOIC-16"),
     ("SSOP-20-208mil", "SSOP-20"), ("VSSOP-8-0.65mm", "VSSOP-8"), ("DFN-8L(3x3)", "DFN-8"),
-    ("WSON-6-EP(2x2)", "DFN-6"), ("SOT-563", "SOT-563"), ("SOT-666", "SOT-666"), ("TO-220F", None),
+    ("SOT23-5", "SOT-23-5"), ("SOT23-5L", "SOT-23-5"), ("TSOT23-5L", "SOT-23-5"), ("TSOT-25", "SOT-23-5"),
+    ("SOT-25-5", "SOT-23-5"), ("SOT-23-THIN-5", "SOT-23-5"), ("SOT-23-6-THIN(DDC)", "SOT-23-6"),
+    ("WSON-6-EP(2x2)", "DFN-6"), ("SOT-563", "SOT-563"), ("SOT-666", "SOT-666"), ("TO-220F", "TO-220F-3"),
 ])
 def test_ic_package_key(pkg, key):
     assert package_key(pkg) == key
@@ -31,19 +33,50 @@ def test_ic_package_key(pkg, key):
     ("Package_SO:TSSOP-20_4.4x6.5mm_P0.65mm", "TSSOP-20"),
     ("Package_TO_SOT_SMD:TSOT-23-5", "SOT-23-5"),
     ("Package_TO_SOT_SMD:TO-252-2", "TO-252"),
-    ("Package_SO:SOIC-16W_7.5x10.3mm_P1.27mm", "SOIC-16W"),
-    ("Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm", None),
+    ("Package_SO:SOIC-16W_7.5x10.3mm_P1.27mm", "SOIC-16"),
+    ("Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm", "XTAL-4"),
 ])
 def test_ic_footprint_key(fp, key):
     assert footprint_package_key(fp) == key
 
 
+@pytest.mark.parametrize("pkg,fp,ok", [
+    ("SOP-8", "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", True),
+    ("SOP-8", "Package_SO:SOIC-8_5.3x5.3mm_P1.27mm", False),  # plain JLC SOIC is 150mil
+    ("SOIC-8-208mil", "Package_SO:SOIC-8_5.3x5.3mm_P1.27mm", True),
+    ("SOIC-8-208mil", "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", False),
+    ("SOIC-16-300mil", "Package_SO:SOIC-16W_7.5x10.3mm_P1.27mm", True),
+    ("SOIC-16-300mil", "plib:SOIC-16_L10.3-W7.5-P1.27-LS10.3-BL", True),
+    ("SOIC-16", "plib:SOIC-16_L10.3-W7.5-P1.27-LS10.3-BL", False),
+    ("TSSOP-48-6.1mm", "Package_SO:TSSOP-48_6.1x12.5mm_P0.5mm", True),
+    ("TSSOP-20", "Package_SO:TSSOP-20_4.4x6.5mm_P0.65mm", True),
+    ("SSOP-20", "Package_SO:SSOP-20_5.3x7.2mm_P0.65mm", True),  # JLC SSOP width varies: unknown matches any
+    ("SSOP-16-150mil", "Package_SO:SSOP-20_5.3x7.2mm_P0.65mm", False),
+    ("QFN-32-EP(5x5)", "Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.45x3.45mm", True),
+    ("QFN-32(4x4)", "Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.45x3.45mm", False),
+    ("QFN-32", "Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.45x3.45mm", True),
+    ("DFN-8(2x3)", "Package_SON:WSON-8-1EP_3x2mm_P0.5mm_EP1.2x1.5mm", True),  # orientation doesn't matter
+    ("LGA-8(2.5x2.5)", "Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering", True),
+    ("0603", "Fuse:Fuse_0603_1608Metric", True),
+    ("0805", "Capacitor_SMD:C_0603_1608Metric", False),
+    ("TO-220AB", "Package_TO_SOT_THT:TO-220-3_Vertical", True),
+    ("DIP-8", "Package_DIP:DIP-8_W7.62mm", True),
+    ("UFQFPN-48(7x7)", "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.6x5.6mm", True),
+    ("SMD3225-4P", "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm", True),
+    ("SMD2016-4P", "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm", False),
+    ("SMD3225-4P", "Oscillator:Oscillator_SMD_Abracon_ASE-4Pin_3.2x2.5mm", True),
+    ("SMD5032-4P", "Oscillator:Oscillator_SMD_SiT_PQFN-4Pin_5.0x3.2mm", True),
+])
+def test_package_matches_footprint(pkg, fp, ok):
+    assert parse_package(pkg).matches(parse_footprint(fp)) == ok
+
+
 def test_choose_mpn_ic_package():
     parts = [Part(1, "LM358", "X", "SOP-8", True, 1000, 0.1, ""),
              Part(2, "LM358", "X", "TSSOP-8", False, 5000, 0.1, "")]
-    assert choose_mpn("LM358", parts, package_key="SOIC-8").lcsc == 1
-    assert choose_mpn("LM358", parts, package_key="TSSOP-8").lcsc == 2
-    assert choose_mpn("LM358", parts, package_key="QFN-8") is None
+    assert choose_mpn("LM358", parts, package=Package("SOIC-8")).lcsc == 1
+    assert choose_mpn("LM358", parts, package=Package("TSSOP-8")).lcsc == 2
+    assert choose_mpn("LM358", parts, package=Package("QFN-8")) is None
 
 
 def _symbol(lib_id, ref, value, footprint="", **extra):
@@ -87,7 +120,7 @@ def test_assign_other_parts(tmp_path, capsys):
     assert syms["U1"].prop("Footprint") == "Package_TO_SOT_SMD:SOT-223-3_TabPin2"
     assert syms["J1"].prop("LCSC") is None and syms["Q1"].prop("LCSC") is None
     assert syms["U3"].prop("LCSC") is None and "add an MPN field" in out
-    assert syms["U2"].prop("LCSC") is None and "stocked in SOIC-8" in out  # explicit MPN, wrong package
+    assert syms["U2"].prop("LCSC") is None and "stocked in SOIC-8 (3.9mm))" in out  # explicit MPN, wrong package
     # prefix match is only suggested, in the package the footprint asks for
     assert syms["U4"].prop("LCSC") is None
     assert "closest LM66100DCKR (C2869734, SC-70-6" in out and "LM66100DCKT" not in out
@@ -125,3 +158,23 @@ def test_find_mpn_prefix_wildcard(tmp_path):
     from autopartselector import db
     assert [p.lcsc for p in db.find_mpn_prefix(conn, "STM32F072CBTx", 1, None)] == [2, 1]
     assert [p.lcsc for p in db.find_mpn_prefix(conn, "STM32F072", 1, None)] == [2, 3, 1]
+
+
+def test_stocked_in_note_merges_spellings(tmp_path, capsys):
+    dbp = tmp_path / "parts.sqlite3"
+    conn = sqlite3.connect(dbp)
+    conn.execute("CREATE TABLE parts (lcsc INTEGER PRIMARY KEY, category TEXT, subcategory TEXT, mfr TEXT, "
+                 "package TEXT, manufacturer TEXT, library_type TEXT, description TEXT, datasheet TEXT, "
+                 "price TEXT, stock INTEGER)")
+    conn.executemany("INSERT INTO parts VALUES (?, 'x', 'Chargers', 'TP4054', ?, 'm', 'Extended', NULL, NULL, "
+                     "'1-:0.1', 1000)", [(1, "SOT-23-5"), (2, "SOT-23-5L"), (3, "SOT23-5")])
+    conn.commit()
+    conn.close()
+    sch = tmp_path / "b.kicad_sch"
+    sch.write_text("(kicad_sch\n"
+                   + _symbol("x:TP4054", "U1", "TP4054", "Package_TO_SOT_SMD:SOT-23-5L")
+                   + _symbol("x:TP4054", "U2", "TP4054", "Package_TO_SOT_SMD:SOT-23-6", MPN="TP4054") + ")\n")
+    cli.main(["--db", str(dbp), "assign", str(sch), "--no-net-voltage"])
+    out = capsys.readouterr().out
+    assert Schematic(sch).symbols()[0].prop("LCSC") is not None
+    assert "(stocked in SOT-23-5)" in out

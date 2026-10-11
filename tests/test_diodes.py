@@ -6,7 +6,7 @@ import pytest
 from autopartselector import db
 from autopartselector.cli import _diode_mpn
 from autopartselector.db import Part
-from autopartselector.footprints import diode_footprint, package_key, footprint_package_key
+from autopartselector.footprints import Package, diode_footprint, package_key, footprint_package_key
 from autopartselector.kicad_sch import Symbol, diode_kind
 from autopartselector.select import choose_mpn
 
@@ -14,7 +14,7 @@ from autopartselector.select import choose_mpn
 @pytest.mark.parametrize("pkg,key", [
     ("SMA(DO-214AC)", "SMA"), ("DO-214AC(SMA)", "SMA"), ("SMB", "SMB"), ("SOD-123FL", "SOD-123F"),
     ("LL-34", "MINIMELF"), ("DFN1006-2L", "SOD-882"), ("SOT-23-6L", "SOT-23-6"), ("0603", "0603"),
-    ("SMAF", "SMAF"), ("TO-220F", None),
+    ("SMAF", "SMAF"), ("TO-220F", "TO-220F-3"),
 ])
 def test_package_key(pkg, key):
     assert package_key(pkg) == key
@@ -53,9 +53,9 @@ def test_choose_mpn_prefers_basic_then_exact():
 
 
 def test_choose_mpn_package_and_manufacturer_filters():
-    assert choose_mpn("B5819W", PARTS, package_key="SOD-323").lcsc == 3
+    assert choose_mpn("B5819W", PARTS, package=Package("SOD-323")).lcsc == 3
     assert choose_mpn("B5819W", PARTS, manufacturer="nexperia").lcsc == 3
-    assert choose_mpn("B5819W", PARTS, package_key="SMA") is None
+    assert choose_mpn("B5819W", PARTS, package=Package("SMA")) is None
 
 
 def test_find_mpn_suffix_and_like_escaping(tmp_path):

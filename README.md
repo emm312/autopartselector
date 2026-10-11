@@ -72,10 +72,14 @@ Every other symbol in the BOM (`U…`, `Q…`, `Y…`, `J…`, `F…`, `FB…` a
 same way as diodes: an `MPN` field if there is one, otherwise the Value (`AMS1117-3.3`, `LM358DR`).
 
 - Only `LCSC` is written. The footprint is never changed.
-- If the symbol has a footprint in a package it recognises (SOIC/SOP, SSOP, TSSOP, MSOP, QFN, DFN, LQFP, TQFP,
-  SOT-23-x, SOT-223, SOT-89, TO-252, TO-263, plus the diode packages), only parts in that package are used.
-  QFN and DFN are matched on pin count only. If the footprint is unrecognised, any package is allowed, so check the
-  `Pkg` column.
+- If the symbol has a footprint in a package it recognises, only parts in that package are used: SOIC/SOP, SSOP,
+  TSSOP, MSOP, QFN/DFN/SON, LQFP/TQFP, BGA, LGA, DIP, SOT-23-x, SOT-223, SOT-89, TO-92/220/247/252/263, chip sizes
+  (`0603`…), SMD crystals/oscillators (`3225`…) and the diode packages. KiCad stock names and EasyEDA/JLC `plib`
+  names (`SOIC-16_L10.3-W7.5…`) are both read.
+- Sizes are compared too when both sides give one: SOIC/SSOP/TSSOP body width (a `SOIC-8_5.3x5.3mm` footprint only
+  takes 208mil parts; a JLC listing with no width counts as 150mil for SOIC and 4.4mm for TSSOP), and QFN/DFN/LGA/BGA
+  and crystal body size. Pitch and exposed pad aren't checked for QFN/DFN.
+- If the footprint is unrecognised (connectors, modules), any package is allowed, so check the `Pkg` column.
 - Values left as a generic symbol name (`Conn_01x04`, `Q_NMOS_GSD`) are skipped.
 - If a part number isn't found, the closest stocked part whose MPN starts with it (in the footprint's package, if
   known) is shown in the Notes column, e.g. `closest TPS56339DDCR (C2071106, TSOT-23-6, …)`. It isn't written:

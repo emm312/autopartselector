@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from .db import Part
 from .footprints import CHIP, footprint_for, package_area
-from .footprints import package_key as _package_key
+from .footprints import Package, parse_package
 from .parse import Requirement
 
 DEFAULT_DIELECTRICS = {"C0G", "X5R", "X6S", "X6T", "X7R", "X7S", "X7T", "X8R", "X8L"}
@@ -136,12 +136,19 @@ def choose(req: Requirement, parts_by_pkg: dict[str, list[Part]], ladder, opts: 
     return Choice(best, bumped, reason)
 
 
-def choose_mpn(mpn: str, parts: list[Part], package_key: str | None = None,
+def _fits(p: Part, package: Package | None) -> bool:
+    if package is None:
+        return True
+    got = parse_package(p.package)
+    return got is not None and got.matches(package)
+
+
+def choose_mpn(mpn: str, parts: list[Part], package: Package | None = None,
                manufacturer: str | None = None) -> Part | None:
     """Best part for an MPN: Basic first, then exact MPN over suffixed variants, then stock."""
     ok = [
         p for p in parts
-        if (package_key is None or _package_key(p.package) == package_key)
+        if _fits(p, package)
         and (not manufacturer or manufacturer.lower() in (p.manufacturer or "").lower())
     ]
     if not ok:
@@ -149,12 +156,12 @@ def choose_mpn(mpn: str, parts: list[Part], package_key: str | None = None,
     return min(ok, key=lambda p: (not p.basic, p.mfr.lower() != mpn.lower(), -p.stock))
 
 
-def closest_mpn(parts: list[Part], package_key: str | None = None,
+def closest_mpn(parts: list[Part], package: Package | None = None,
                 manufacturer: str | None = None) -> tuple[Part, int] | None:
     """Best prefix-match suggestion (Basic, then stock) and how many other MPNs also matched."""
     ok = [
         p for p in parts
-        if (package_key is None or _package_key(p.package) == package_key)
+        if _fits(p, package)
         and (not manufacturer or manufacturer.lower() in (p.manufacturer or "").lower())
     ]
     if not ok:

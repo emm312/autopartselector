@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 from . import db, kicad_sch, netlist, project, select, update
-from .footprints import CHIP, diode_footprint, package_key, footprint_for, footprint_package_key
+from .footprints import CHIP, diode_footprint, footprint_for, package_key, parse_footprint, parse_package
 from .parse import parse_requirement
 
 
@@ -96,17 +96,17 @@ def assign_by_mpn(sch, sym, kind: str, conn, args, field: str) -> tuple[tuple, s
             return (refs, value, "", "-", "", "", "", "", "Value isn't a part number; NO MATCH"), "unresolved"
     notes = []
     footprint = (sym.prop("Footprint") or "").strip()
-    pkg_key = footprint_package_key(footprint) if footprint else None
-    if footprint and pkg_key is None:
+    pkg = parse_footprint(footprint) if footprint else None
+    if footprint and pkg is None:
         notes.append(f"unrecognised footprint {footprint.split(':')[-1]}; any package")
     mfr = _field(sym, MFR_FIELDS)
     subs = db.DIODE_SUBCATEGORIES if kind != "other" else None
     parts = db.find_mpn(conn, mpn, args.min_stock, subs)
-    p = select.choose_mpn(mpn, parts, pkg_key, mfr)
+    p = select.choose_mpn(mpn, parts, pkg, mfr)
     if p is None:
         if not parts:
             # Values often leave off the orderable suffix ('TLV62569DDC' vs 'TLV62569DDCR'). Suggest, don't write.
-            near = select.closest_mpn(db.find_mpn_prefix(conn, mpn, args.min_stock, subs), pkg_key, mfr)
+            near = select.closest_mpn(db.find_mpn_prefix(conn, mpn, args.min_stock, subs), pkg, mfr)
             if near:
                 q, others = near
                 notes.append(f"closest {q.mfr} ({q.lcsc_str}, {q.package}, {'Basic' if q.basic else 'Ext'}, "
@@ -118,8 +118,10 @@ def assign_by_mpn(sch, sym, kind: str, conn, args, field: str) -> tuple[tuple, s
         why = "no stocked part with this MPN"
         if parts:
             why = f"{len(parts)} stocked, none match " + " / ".join(
-                x for x in (f"package {pkg_key}" if pkg_key else "", f"manufacturer {mfr!r}" if mfr else "") if x)
-            why += " (stocked in " + ", ".join(sorted({x.package for x in parts})) + ")"
+                x for x in (f"package {pkg}" if pkg else "", f"manufacturer {mfr!r}" if mfr else "") if x)
+            # Name packages by what they parse to, so 'SOT-23-5' and 'SOT-23-5L' aren't listed as two packages.
+            stocked = {str(parse_package(x.package) or x.package) for x in parts}
+            why += " (stocked in " + ", ".join(sorted(stocked)) + ")"
         return (refs, value, mpn, "-", "", "", "", "", "; ".join([*notes, why, "NO MATCH"])), "unresolved"
     if kind == "other":
         if not footprint:
