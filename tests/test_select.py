@@ -110,3 +110,16 @@ def test_shield_request_from_description():
     assert parse_requirement("L", "4.7uH", {"Description": "Inductor"}).shielded is None
     assert parse_requirement("L", "4.7uH non-shielded", {}).shielded is False
     assert parse_requirement("C", "1u shielded", {}).shielded is None
+
+
+def test_implausible_inductor_listings():
+    from autopartselector.db import implausible_inductor
+    # JLC lists a 4x4mm molded inductor as "0402"; a genuine 0402 can't hold 2.2uH at 3A
+    assert implausible_inductor(part(1, "L", "0402", "2.2uH 3A 58mΩ 5A Molded Inductor ±20%"))
+    assert implausible_inductor(part(2, "L", "0201", "13@500MHz 250mΩ 3nH 450A 9.5GHz Multilayer inductor"))
+    assert implausible_inductor(part(3, "L", "SMD,4x3.1mm", "0.6mΩ 45A 53uH ±25%"))
+    # the best genuine parts in each class stay
+    assert not implausible_inductor(part(4, "L", "0402", "1.15A 1A 1uH 300mΩ ±20%"))
+    assert not implausible_inductor(part(5, "L", "1210", "1.9A 2.1A 22uH 315mΩ Molded Inductor ±20%"))
+    assert not implausible_inductor(part(6, "L", "SMD,16.5x15.5mm", "15uH 22A 25.5A 7.5mΩ ±20%"))
+    assert not implausible_inductor(part(7, "L", "0402", "10nH 300mA ±5%"))

@@ -41,7 +41,9 @@ What each rating means:
 - **R**: power ≥ the largest of P, I²R and V²/R. Tolerance defaults to 1%.
 - **C**: voltage rating ≥ V × `--cap-derate` (default 1). If no dielectric is given, any of C0G, X5R, X6S, X7R,
   X7S or X8R is allowed.
-- **L**: both listed currents (rated and saturation) ≥ I. If the symbol's Description or Value says `shielded`, only shielded (or molded) parts
+- **L**: both listed currents (rated and saturation) ≥ I. Listings whose ratings can't fit their package (JLC lists
+  some 4x4mm power inductors as `0402`) are ignored: more than 20 µJ/mm² of L·I² for a chip size, or 100 µJ/mm² for
+  an `SMD,AxBmm` package. If the symbol's Description or Value says `shielded`, only shielded (or molded) parts
   are used; `unshielded` does the opposite. Either one also allows power-inductor packages for that part.
 
 ### Voltage from nets

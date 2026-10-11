@@ -7,6 +7,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .footprints import CHIP, package_area
 from .parse import classify_token, parse_si
 
 SUBCATEGORIES = {
@@ -81,6 +82,20 @@ def parse_description(kind: str, desc: str, part: Part) -> None:
             setattr(part, key, v)
 
 
+# Most energy (L * I^2) an inductor can store per mm^2 of footprint. Genuine chip inductors reach ~10 uJ/mm^2;
+# listings above 20 have the wrong package (a 4x4mm 'SKSHC0402' listed as 0402) or a garbled description
+# ('3nH 450A'). Packages given as 'SMD,AxBmm' include tall parts (genuine up to ~50), so only absurd ones are cut.
+MAX_UJ_PER_MM2 = {"chip": 20.0, "smd": 100.0}
+
+
+def implausible_inductor(p: Part) -> bool:
+    area = package_area(p.package)
+    if not area or not p.value or not p.currents:
+        return False
+    density = p.value * min(p.currents) ** 2 * 1e6 / area
+    return density > MAX_UJ_PER_MM2["chip" if p.package in CHIP else "smd"]
+
+
 def open_db(path: Path) -> sqlite3.Connection:
     legacy = path.with_name("passives.sqlite3")
     if not path.exists() and path.name == "parts.sqlite3" and legacy.exists():
@@ -149,6 +164,6 @@ def load_parts(conn: sqlite3.Connection, kind: str, min_stock: int) -> list[Part
         p = Part(r["lcsc"], r["mfr"], r["manufacturer"], r["package"], r["library_type"] == "Basic",
                  r["stock"], first_price(r["price"] or ""), r["description"] or "")
         parse_description(kind, p.description, p)
-        if p.value is not None:
+        if p.value is not None and not (kind == "L" and implausible_inductor(p)):
             out.append(p)
     return out
